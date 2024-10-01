@@ -331,6 +331,84 @@ class ImagePSF(Fittable2DModel):
 
         return evaluated_model
 
+class PSFExPSF(ImagePSF):
+    """
+    A fittable model for PSF output from PSFEx.
+
+    The PSFEx PSF is a grid of 2D models where each 2D element represents
+    the contribution of a polynomial. The polymial can be constructed from
+    any FITS header parameter, but the most straightforward example would
+    be the x and y positions of the CCD image.
+
+    The model has three model parameters: an image intensity scaling
+    factor (``flux``) which is applied to the input image, and two
+    positional parameters (``x_0`` and ``y_0``) indicating the location
+    of a feature in the coordinate grid on which the model is evaluated.
+
+    Parameters
+    ----------
+    data : 3D `~numpy.ndarray`
+        Array containing the grid of reference PSF arrays. The length of 
+        the x and y axes must both be at least 4. All elements of the 
+        input image data must be finite. By default, the PSF peak is 
+        assumed to be located at the center of the input image (see the ``origin``
+        keyword).
+
+    flux : float, optional
+        The total flux of the source, assuming the input image
+        was properly normalized.
+
+    x_0, y_0 : float
+        The x and y positions of a feature in the image in the output
+        coordinate grid on which the model is evaluated. Typically, this
+        refers to the position of the PSF peak, which is assumed to be
+        located at the center of the input image (see the ``origin``
+        keyword).
+
+    origin : tuple of 2 float or None, optional
+        The ``(x, y)`` coordinate with respect to the input image data
+        array that represents the reference pixel of the input data.
+
+        The reference ``origin`` pixel will be placed at the model
+        ``x_0`` and ``y_0`` coordinates in the output coordinate system
+        on which the model is evaluated.
+
+        Most typically, the input PSF should be centered in the input
+        image, and thus the origin should be set to the central pixel of
+        the ``data`` array.
+
+        If the origin is set to `None`, then the origin will be set to
+        the center of the ``data`` array (``(npix - 1) / 2.0``).
+
+    oversampling : int or array_like (int), optional
+        The integer oversampling factor(s) of the input PSF image. If
+        ``oversampling`` is a scalar then it will be used for both axes.
+        If ``oversampling`` has two elements, they must be in ``(y, x)``
+        order.
+
+    fill_value : float, optional
+        The value to use for points outside of the input pixel grid.
+        The default is 0.0.
+
+    **kwargs : dict, optional
+        Additional optional keyword arguments to be passed to the
+        `astropy.modeling.Model` base class.
+
+    See Also
+    --------
+    GriddedPSFModel : A model for a grid of ePSF models.    
+
+    """
+    flux = Parameter(default=1,
+                     description='Intensity scaling factor of the image.')
+    x_0 = Parameter(default=0,
+                    description=('Position of a feature in the image along '
+                                 'the x axis'))
+    y_0 = Parameter(default=0,
+                    description=('Position of a feature in the image along '
+                                 'the y axis'))
+
+    
 
 @deprecated('2.0.0', alternative='`ImagePSF`')
 class FittableImageModel(Fittable2DModel):
