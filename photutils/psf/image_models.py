@@ -331,7 +331,7 @@ class ImagePSF(Fittable2DModel):
 
         return evaluated_model
 
-class PSFExPSF(ImagePSF):
+class PSFExPSF(Fittable2DModel):
     """
     A fittable model for PSF output from PSFEx.
 
@@ -408,7 +408,113 @@ class PSFExPSF(ImagePSF):
                     description=('Position of a feature in the image along '
                                  'the y axis'))
 
+    def __init__(self, nddata, *, flux=flux.default, x_0=x_0.default,
+                 y_0=y_0.default, origin=None, oversampling=1,
+                fill_value=0.0, **kwargs):
+
+        # self.data, self.grid_xypos = self._define_grid(nddata)
+        # self._meta = nddata.meta.copy()  # _meta to avoid the meta descriptor
+        self.oversampling = as_pair('oversampling', oversampling,
+                                    lower_bound=(0, 1))
+        self.data = nddata
+        self.fill_value = fill_value
+        # self._interpolator = {}
+
+        super().__init__(flux, x_0, y_0)
+
+    def _validate_data(data):
+        """
+        Validate the PSFEx model.
+        """
+        pass
+
+    def _cls_info(self):
+        cls_info = [('Oversampling', tuple(self.oversampling))]
+        return cls_info
+
+    def __str__(self):
+        return self._format_str(keywords=self._cls_info())
+
+    def copy(self):
+        """
+        Return a copy of this model where only the model parameters are
+        copied.
+
+        All other copied model attributes are references to the
+        original model. This prevents copying the ePSF grid data, which
+        may contain a large array.
+
+        This method is useful if one is interested in only changing
+        the model parameters in a model copy. It is used in the PSF
+        photometry classes during model fitting.
+
+        Use the `deepcopy` method if you want to copy all of the model
+        attributes, including the ePSF grid data.
+
+        Returns
+        -------
+        result : `PSFExPSF`
+            A copy of this model with only the model parameters copied.
+        """
+        newcls = object.__new__(self.__class__)
+
+        for key, val in self.__dict__.items():
+            if key in self.param_names:  # copy only the parameter values
+                newcls.__dict__[key] = copy.copy(val)
+            else:
+                newcls.__dict__[key] = val
+
+        return newcls 
+
+    def deepcopy(self):
+        """
+        Return a deep copy of this model.
+
+        Returns
+        -------
+        result : `PSFExPSF`
+            A deep copy of this model.
+        """
+        return copy.deepcopy(self)
     
+    @property
+    def origin(self):
+        """
+        A 1D `~numpy.ndarray` (x, y) pixel coordinates within the
+        model's 2D image of the origin of the coordinate system.
+
+        The reference ``origin`` pixel will be placed at the model
+        ``x_0`` and ``y_0`` coordinates in the output coordinate system
+        on which the model is evaluated.
+
+        Most typically, the input PSF should be centered in the input
+        image, and thus the origin should be set to the central pixel of
+        the ``data`` array.
+
+        If the origin is set to `None`, then the origin will be set to
+        the center of the ``data`` array (``(npix - 1) / 2.0``).
+        """
+        return self._origin
+
+    @origin.setter
+    def origin(self, origin):
+        if origin is None:
+            origin = (np.array(self.data.shape[1:]) - 1.0) / 2.0
+        else:
+            origin = np.asarray(origin)
+            if origin.ndim != 1 or len(origin) != 2:
+                raise ValueError('origin must be 1D and have 2-elements')
+            if not np.all(np.isfinite(origin)):
+                raise ValueError('All elements of origin must be finite')
+        self._origin = origin
+
+    
+
+
+
+
+
+
 
 @deprecated('2.0.0', alternative='`ImagePSF`')
 class FittableImageModel(Fittable2DModel):
