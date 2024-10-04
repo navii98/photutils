@@ -29,7 +29,8 @@ else:
 logger = logging.getLogger(__name__)
 
 try:
-    from sphinx_astropy.conf.v1 import *  # noqa: F403
+    from sphinx_astropy.conf.v2 import *  # noqa: F403
+    from sphinx_astropy.conf.v2 import extensions  # noqa: E402
 except ImportError:
     msg = ('The documentation requires the sphinx-astropy package to be '
            'installed. Please install the "docs" requirements.')
@@ -75,14 +76,15 @@ del intersphinx_mapping['h5py']  # noqa: F405
 # .inc.rst mean *include* files, don't have sphinx process them
 # exclude_patterns += ["_templates", "_pkgtemplate.rst", "**/*.inc.rst"]
 
+extensions += [
+    'sphinx_design',
+]
+
 # This is added to the end of RST files - a good place to put
 # substitutions to be used globally.
 rst_epilog = """
 .. _Astropy: https://www.astropy.org/
 """
-
-# Turn off table of contents entries for functions and classes
-toc_object_entries = False
 
 # -- Project information ------------------------------------------------------
 project = project_meta['name']
@@ -101,6 +103,22 @@ version = '.'.join(release.split('.')[:2])
 dev = 'dev' in release
 
 # -- Options for HTML output --------------------------------------------------
+
+html_theme_options.update(  # noqa: F405
+    {
+        'github_url': 'https://github.com/astropy/photutils',
+        'header_links_before_dropdown': 6,
+        'navigation_with_keys': False,
+        'use_edit_page_button': False,
+        'logo': {
+            'image_light': 'photutils_logo_light.svg',
+            'image_dark': 'photutils_logo_dark.svg',
+        },
+    }
+)
+
+html_show_sourcelink = False
+
 # The global astropy configuration uses a custom theme,
 # 'bootstrap-astropy', which is installed along with astropy. A
 # different theme can be used or the options for this theme can be
@@ -117,13 +135,6 @@ dev = 'dev' in release
 # to the name of a builtin theme or the name of a custom theme in
 # html_theme_path.
 # html_theme = None
-
-# Customized theme options
-html_theme_options = {
-    'logotext1': 'phot',  # white, semi-bold
-    'logotext2': 'utils',  # orange, light
-    'logotext3': ''  # white, light
-}
 
 # Custom sidebar templates, maps document names to template names.
 # html_sidebars = {}
@@ -150,7 +161,7 @@ htmlhelp_basename = project + 'doc'
 
 # Static files to copy after template files
 html_static_path = ['_static']
-html_style = 'photutils.css'
+# html_style = 'photutils.css'
 
 # Set canonical URL from the Read the Docs Domain
 html_baseurl = os.environ.get('READTHEDOCS_CANONICAL_URL', '')
@@ -174,7 +185,7 @@ html_context = {
 # start file, target name, title, author, documentclass [howto/manual]).
 latex_documents = [('index', project + '.tex', project + ' Documentation',
                     author, 'manual')]
-latex_logo = '_static/photutils_banner.pdf'
+# latex_logo = '_static/photutils_banner.pdf'
 
 # -- Options for manual page output -------------------------------------------
 # One entry per manual page. List of tuples (source start file, name,
@@ -187,7 +198,6 @@ github_issues_url = f'https://github.com/{github_project}/issues/'
 
 # -- Turn on nitpicky mode for sphinx (to warn about references not found) ----
 nitpicky = True
-nitpick_ignore = []
 
 # Some warnings are impossible to suppress, and you can list specific
 # references that should be ignored in a nitpick-exceptions file which
@@ -202,6 +212,7 @@ nitpick_ignore = []
 # py:class astropy.io.votable.tree.SimpleElementWithContent
 #
 # Uncomment the following lines to enable the exceptions:
+nitpick_ignore = []
 nitpick_filename = 'nitpick-exceptions.txt'
 if os.path.isfile(nitpick_filename):
     with open(nitpick_filename) as fh:

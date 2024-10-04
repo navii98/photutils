@@ -57,6 +57,10 @@ class GaussianPSF(Fittable2DModel):
         The counterclockwise rotation angle either as a float (in
         degrees) or a `~astropy.units.Quantity` angle (optional).
 
+    bbox_factor : float, optional
+        The multiple of the x and y standard deviations (sigma) used to
+        define the bounding box limits.
+
     **kwargs : dict, optional
         Additional optional keyword arguments to be passed to the
         `astropy.modeling.Model` base class.
@@ -156,9 +160,10 @@ class GaussianPSF(Fittable2DModel):
 
     def __init__(self, *, flux=flux.default, x_0=x_0.default, y_0=y_0.default,
                  x_fwhm=x_fwhm.default, y_fwhm=y_fwhm.default,
-                 theta=theta.default, **kwargs):
+                 theta=theta.default, bbox_factor=5.5, **kwargs):
         super().__init__(flux=flux, x_0=x_0, y_0=y_0, x_fwhm=x_fwhm,
                          y_fwhm=y_fwhm, theta=theta, **kwargs)
+        self.bbox_factor = bbox_factor
 
     @property
     def amplitude(self):
@@ -181,9 +186,9 @@ class GaussianPSF(Fittable2DModel):
         """
         return self.y_fwhm * GAUSSIAN_FWHM_TO_SIGMA
 
-    def bounding_box(self, factor=5.5):
+    def _calc_bounding_box(self, factor=5.5):
         """
-        Return a bounding box defining the limits of the model.
+        Calculate a bounding box defining the limits of the model.
 
         The limits are adjusted for rotation.
 
@@ -195,8 +200,19 @@ class GaussianPSF(Fittable2DModel):
 
         Returns
         -------
-        bounding_box : `astropy.modeling.bounding_box.ModelBoundingBox`
-            A bounding box defining the limits of the model.
+        bbox : tuple
+            A bounding box defining the ((y_min, y_max), (x_min, x_max))
+            limits of the model.
+        """
+        a = factor * self.x_sigma
+        b = factor * self.y_sigma
+        dx, dy = ellipse_extent(a, b, self.theta)
+        return ((self.y_0 - dy, self.y_0 + dy), (self.x_0 - dx, self.x_0 + dx))
+
+    @property
+    def bounding_box(self):
+        """
+        The bounding box of the model.
 
         Examples
         --------
@@ -205,19 +221,24 @@ class GaussianPSF(Fittable2DModel):
         >>> model.bounding_box  # doctest: +FLOAT_CMP
         ModelBoundingBox(
             intervals={
-                x: Interval(lower=-4.6712699, upper=4.6712699)
-                y: Interval(lower=-7.0069049, upper=7.0069048)
+                x: Interval(lower=-4.671269901584105, upper=4.671269901584105)
+                y: Interval(lower=-7.006904852376157, upper=7.006904852376157)
+            }
+            model=GaussianPSF(inputs=('x', 'y'))
+            order='C'
+        )
+        >>> model.bbox_factor = 7
+        >>> model.bounding_box  # doctest: +FLOAT_CMP
+        ModelBoundingBox(
+            intervals={
+                x: Interval(lower=-5.945252602016134, upper=5.945252602016134)
+                y: Interval(lower=-8.9178789030242, upper=8.9178789030242)
             }
             model=GaussianPSF(inputs=('x', 'y'))
             order='C'
         )
         """
-        a = factor * self.x_sigma
-        b = factor * self.y_sigma
-        dx, dy = ellipse_extent(a, b, self.theta)
-
-        return ((self.y_0 - dy, self.y_0 + dy),
-                (self.x_0 - dx, self.x_0 + dx))
+        return self._calc_bounding_box(factor=self.bbox_factor)
 
     def evaluate(self, x, y, flux, x_0, y_0, x_fwhm, y_fwhm, theta):
         """
@@ -418,6 +439,10 @@ class CircularGaussianPSF(Fittable2DModel):
     fwhm : float, optional
         The full width at half maximum (FWHM) of the Gaussian.
 
+    bbox_factor : float, optional
+        The multiple of the standard deviation (sigma) used to define
+        the bounding box limits.
+
     **kwargs : dict, optional
         Additional optional keyword arguments to be passed to the
         `astropy.modeling.Model` base class.
@@ -487,8 +512,9 @@ class CircularGaussianPSF(Fittable2DModel):
         default=1, description='FWHM of the Gaussian', fixed=True)
 
     def __init__(self, *, flux=flux.default, x_0=x_0.default, y_0=y_0.default,
-                 fwhm=fwhm.default, **kwargs):
+                 fwhm=fwhm.default, bbox_factor=5.5, **kwargs):
         super().__init__(flux=flux, x_0=x_0, y_0=y_0, fwhm=fwhm, **kwargs)
+        self.bbox_factor = bbox_factor
 
     @property
     def amplitude(self):
@@ -504,9 +530,9 @@ class CircularGaussianPSF(Fittable2DModel):
         """
         return self.fwhm * GAUSSIAN_FWHM_TO_SIGMA
 
-    def bounding_box(self, factor=5.5):
+    def _calc_bounding_box(self, factor=5.5):
         """
-        Return a bounding box defining the limits of the model.
+        Calculate a bounding box defining the limits of the model.
 
         Parameters
         ----------
@@ -516,8 +542,18 @@ class CircularGaussianPSF(Fittable2DModel):
 
         Returns
         -------
-        bounding_box : `astropy.modeling.bounding_box.ModelBoundingBox`
-            A bounding box defining the limits of the model.
+        bbox : tuple
+            A bounding box defining the ((y_min, y_max), (x_min, x_max))
+            limits of the model.
+        """
+        delta = factor * self.sigma
+        return ((self.y_0 - delta, self.y_0 + delta),
+                (self.x_0 - delta, self.x_0 + delta))
+
+    @property
+    def bounding_box(self):
+        """
+        The bounding box of the model.
 
         Examples
         --------
@@ -526,16 +562,24 @@ class CircularGaussianPSF(Fittable2DModel):
         >>> model.bounding_box  # doctest: +FLOAT_CMP
         ModelBoundingBox(
             intervals={
-                x: Interval(lower=-4.6712699, upper=4.6712699)
-                y: Interval(lower=-4.6712699, upper=4.6712699)
+                x: Interval(lower=-4.671269901584105, upper=4.671269901584105)
+                y: Interval(lower=-4.671269901584105, upper=4.671269901584105)
+            }
+            model=CircularGaussianPSF(inputs=('x', 'y'))
+            order='C'
+        )
+        >>> model.bbox_factor = 7
+        >>> model.bounding_box  # doctest: +FLOAT_CMP
+        ModelBoundingBox(
+            intervals={
+                x: Interval(lower=-5.945252602016134, upper=5.945252602016134)
+                y: Interval(lower=-5.945252602016134, upper=5.945252602016134)
             }
             model=CircularGaussianPSF(inputs=('x', 'y'))
             order='C'
         )
         """
-        delta = factor * self.sigma
-        return ((self.y_0 - delta, self.y_0 + delta),
-                (self.x_0 - delta, self.x_0 + delta))
+        return self._calc_bounding_box(factor=self.bbox_factor)
 
     def evaluate(self, x, y, flux, x_0, y_0, fwhm):
         """
@@ -654,6 +698,10 @@ class GaussianPRF(Fittable2DModel):
         The counterclockwise rotation angle either as a float (in
         degrees) or a `~astropy.units.Quantity` angle (optional).
 
+    bbox_factor : float, optional
+        The multiple of the x and y standard deviations (sigma) used to
+        define the bounding_box limits.
+
     **kwargs : dict, optional
         Additional optional keyword arguments to be passed to the
         `astropy.modeling.Model` base class.
@@ -759,10 +807,10 @@ class GaussianPRF(Fittable2DModel):
 
     def __init__(self, *, flux=flux.default, x_0=x_0.default, y_0=y_0.default,
                  x_fwhm=x_fwhm.default, y_fwhm=y_fwhm.default,
-                 theta=theta.default, **kwargs):
-
+                 theta=theta.default, bbox_factor=5.5, **kwargs):
         super().__init__(flux=flux, x_0=x_0, y_0=y_0, x_fwhm=x_fwhm,
                          y_fwhm=y_fwhm, theta=theta, **kwargs)
+        self.bbox_factor = bbox_factor
 
     @property
     def amplitude(self):
@@ -785,22 +833,33 @@ class GaussianPRF(Fittable2DModel):
         """
         return self.y_fwhm * GAUSSIAN_FWHM_TO_SIGMA
 
-    def bounding_box(self, factor=5.5):
+    def _calc_bounding_box(self, factor=5.5):
         """
-        Return a bounding box defining the limits of the model.
+        Calculate a bounding box defining the limits of the model.
 
         The limits are adjusted for rotation.
 
         Parameters
         ----------
         factor : float, optional
-            The multiple of the x and y standard deviations (sigma) used
-            to define the limits.
+            The multiple of the x and y FWHMs used to define the limits.
+            zzzz
 
         Returns
         -------
-        bounding_box : `astropy.modeling.bounding_box.ModelBoundingBox`
-            A bounding box defining the limits of the model.
+        bbox : tuple
+            A bounding box defining the ((y_min, y_max), (x_min, x_max))
+            limits of the model.
+        """
+        a = factor * self.x_sigma
+        b = factor * self.y_sigma
+        dx, dy = ellipse_extent(a, b, self.theta)
+        return ((self.y_0 - dy, self.y_0 + dy), (self.x_0 - dx, self.x_0 + dx))
+
+    @property
+    def bounding_box(self):
+        """
+        The bounding box of the model.
 
         Examples
         --------
@@ -809,19 +868,24 @@ class GaussianPRF(Fittable2DModel):
         >>> model.bounding_box  # doctest: +FLOAT_CMP
         ModelBoundingBox(
             intervals={
-                x: Interval(lower=-4.6712699, upper=4.6712699)
-                y: Interval(lower=-7.0069049, upper=7.0069048)
+                x: Interval(lower=-4.671269901584105, upper=4.671269901584105)
+                y: Interval(lower=-7.006904852376157, upper=7.006904852376157)
+            }
+            model=GaussianPRF(inputs=('x', 'y'))
+            order='C'
+        )
+        >>> model.bbox_factor = 7
+        >>> model.bounding_box  # doctest: +FLOAT_CMP
+        ModelBoundingBox(
+            intervals={
+                x: Interval(lower=-5.945252602016134, upper=5.945252602016134)
+                y: Interval(lower=-8.9178789030242, upper=8.9178789030242)
             }
             model=GaussianPRF(inputs=('x', 'y'))
             order='C'
         )
         """
-        a = factor * self.x_fwhm * GAUSSIAN_FWHM_TO_SIGMA
-        b = factor * self.y_fwhm * GAUSSIAN_FWHM_TO_SIGMA
-        dx, dy = ellipse_extent(a, b, self.theta)
-
-        return ((self.y_0 - dy, self.y_0 + dy),
-                (self.x_0 - dx, self.x_0 + dx))
+        return self._calc_bounding_box(factor=self.bbox_factor)
 
     def evaluate(self, x, y, flux, x_0, y_0, x_fwhm, y_fwhm, theta):
         """
@@ -926,6 +990,10 @@ class CircularGaussianPRF(Fittable2DModel):
     fwhm : float, optional
         The full width at half maximum (FWHM) of the Gaussian.
 
+    bbox_factor : float, optional
+        The multiple of the standard deviation (sigma) used to define
+        the bounding box limits.
+
     **kwargs : dict, optional
         Additional optional keyword arguments to be passed to the
         `astropy.modeling.Model` base class.
@@ -960,7 +1028,7 @@ class CircularGaussianPRF(Fittable2DModel):
     deviation of the Gaussian, and :math:`{\rm erf}` denotes the error
     function.
 
-    The FWHMs of the Gaussian is given by:
+    The FWHM of the Gaussian is given by:
 
     .. math::
 
@@ -1007,9 +1075,9 @@ class CircularGaussianPRF(Fittable2DModel):
         default=1, description='FWHM of the Gaussian', fixed=True)
 
     def __init__(self, *, flux=flux.default, x_0=x_0.default, y_0=y_0.default,
-                 fwhm=fwhm.default, **kwargs):
-
+                 fwhm=fwhm.default, bbox_factor=5.5, **kwargs):
         super().__init__(flux=flux, x_0=x_0, y_0=y_0, fwhm=fwhm, **kwargs)
+        self.bbox_factor = bbox_factor
 
     @property
     def amplitude(self):
@@ -1025,9 +1093,9 @@ class CircularGaussianPRF(Fittable2DModel):
         """
         return self.fwhm * GAUSSIAN_FWHM_TO_SIGMA
 
-    def bounding_box(self, factor=5.5):
+    def _calc_bounding_box(self, factor=5.5):
         """
-        Return a bounding box defining the limits of the model.
+        Calculate a bounding box defining the limits of the model.
 
         Parameters
         ----------
@@ -1037,8 +1105,18 @@ class CircularGaussianPRF(Fittable2DModel):
 
         Returns
         -------
-        bounding_box : `astropy.modeling.bounding_box.ModelBoundingBox`
-            A bounding box defining the limits of the model.
+        bbox : tuple
+            A bounding box defining the ((y_min, y_max), (x_min, x_max))
+            limits of the model.
+        """
+        delta = factor * self.sigma
+        return ((self.y_0 - delta, self.y_0 + delta),
+                (self.x_0 - delta, self.x_0 + delta))
+
+    @property
+    def bounding_box(self):
+        """
+        The bounding box of the model.
 
         Examples
         --------
@@ -1047,16 +1125,24 @@ class CircularGaussianPRF(Fittable2DModel):
         >>> model.bounding_box  # doctest: +FLOAT_CMP
         ModelBoundingBox(
             intervals={
-                x: Interval(lower=-4.6712699, upper=4.6712699)
-                y: Interval(lower=-4.6712699, upper=4.6712699)
+                x: Interval(lower=-4.671269901584105, upper=4.671269901584105)
+                y: Interval(lower=-4.671269901584105, upper=4.671269901584105)
+            }
+            model=CircularGaussianPRF(inputs=('x', 'y'))
+            order='C'
+        )
+        >>> model.bbox_factor = 7
+        >>> model.bounding_box  # doctest: +FLOAT_CMP
+        ModelBoundingBox(
+            intervals={
+                x: Interval(lower=-5.945252602016134, upper=5.945252602016134)
+                y: Interval(lower=-5.945252602016134, upper=5.945252602016134)
             }
             model=CircularGaussianPRF(inputs=('x', 'y'))
             order='C'
         )
         """
-        delta = factor * self.fwhm * GAUSSIAN_FWHM_TO_SIGMA
-        return ((self.y_0 - delta, self.y_0 + delta),
-                (self.x_0 - delta, self.x_0 + delta))
+        return self._calc_bounding_box(factor=self.bbox_factor)
 
     def evaluate(self, x, y, flux, x_0, y_0, fwhm):
         """
@@ -1145,6 +1231,10 @@ class CircularGaussianSigmaPRF(Fittable2DModel):
     sigma : float, optional
         Width of the Gaussian PSF.
 
+    bbox_factor : float, optional
+        The multiple of the standard deviation (sigma) used to define
+        the bounding box limits.
+
     **kwargs : dict, optional
         Additional optional keyword arguments to be passed to the
         `astropy.modeling.Model` parent class.
@@ -1222,9 +1312,9 @@ class CircularGaussianSigmaPRF(Fittable2DModel):
         fixed=True)
 
     def __init__(self, *, flux=flux.default, x_0=x_0.default, y_0=y_0.default,
-                 sigma=sigma.default, **kwargs):
-
+                 sigma=sigma.default, bbox_factor=5.5, **kwargs):
         super().__init__(sigma=sigma, x_0=x_0, y_0=y_0, flux=flux, **kwargs)
+        self.bbox_factor = bbox_factor
 
     @property
     def amplitude(self):
@@ -1240,9 +1330,9 @@ class CircularGaussianSigmaPRF(Fittable2DModel):
         """
         return self.sigma / GAUSSIAN_FWHM_TO_SIGMA
 
-    def bounding_box(self, factor=5.5):
+    def _calc_bounding_box(self, factor=5.5):
         """
-        Return a bounding box defining the limits of the model.
+        Calculate a bounding box defining the limits of the model.
 
         Parameters
         ----------
@@ -1252,41 +1342,44 @@ class CircularGaussianSigmaPRF(Fittable2DModel):
 
         Returns
         -------
-        bounding_box : `astropy.modeling.bounding_box.ModelBoundingBox`
-            A bounding box defining the limits of the model.
+        bbox : tuple
+            A bounding box defining the ((y_min, y_max), (x_min, x_max))
+            limits of the model.
+        """
+        delta = factor * self.sigma
+        return ((self.y_0 - delta, self.y_0 + delta),
+                (self.x_0 - delta, self.x_0 + delta))
+
+    @property
+    def bounding_box(self):
+        """
+        The bounding box of the model.
 
         Examples
         --------
         >>> from photutils.psf import CircularGaussianPRF
-        >>> model = CircularGaussianPRF(x_0=0, y_0=0, sigma=2)
-        >>> model.bounding_box
+        >>> model = CircularGaussianPRF(x_0=0, y_0=0, fwhm=2)
+        >>> model.bounding_box  # doctest: +FLOAT_CMP
         ModelBoundingBox(
             intervals={
-                x: Interval(lower=-11.0, upper=11.0)
-                y: Interval(lower=-11.0, upper=11.0)
+                x: Interval(lower=-4.671269901584105, upper=4.671269901584105)
+                y: Interval(lower=-4.671269901584105, upper=4.671269901584105)
             }
             model=CircularGaussianPRF(inputs=('x', 'y'))
             order='C'
         )
-
-        This range can be set directly (see: `Model.bounding_box
-        <astropy.modeling.Model.bounding_box>`) or by using a different
-        factor, like:
-
-        >>> model.bounding_box = model.bounding_box(factor=2)
-        >>> model.bounding_box
+        >>> model.bbox_factor = 7
+        >>> model.bounding_box  # doctest: +FLOAT_CMP
         ModelBoundingBox(
             intervals={
-                x: Interval(lower=-4.0, upper=4.0)
-                y: Interval(lower=-4.0, upper=4.0)
+                x: Interval(lower=-5.945252602016134, upper=5.945252602016134)
+                y: Interval(lower=-5.945252602016134, upper=5.945252602016134)
             }
             model=CircularGaussianPRF(inputs=('x', 'y'))
             order='C'
         )
         """
-        delta = factor * self.fwhm * GAUSSIAN_FWHM_TO_SIGMA
-        return ((self.y_0 - delta, self.y_0 + delta),
-                (self.x_0 - delta, self.x_0 + delta))
+        return self._calc_bounding_box(factor=self.bbox_factor)
 
     def evaluate(self, x, y, flux, x_0, y_0, sigma):
         """
@@ -1379,6 +1472,10 @@ class IntegratedGaussianPRF(CircularGaussianSigmaPRF):
     sigma : float, optional
         Width of the Gaussian PSF.
 
+    bbox_factor : float, optional
+        The multiple of the standard deviation (sigma) used to define
+        the bounding box limits.
+
     **kwargs : dict, optional
         Additional optional keyword arguments to be passed to the
         `astropy.modeling.Model` parent class.
@@ -1435,9 +1532,9 @@ class IntegratedGaussianPRF(CircularGaussianSigmaPRF):
         fixed=True)
 
     def __init__(self, *, flux=flux.default, x_0=x_0.default, y_0=y_0.default,
-                 sigma=sigma.default, **kwargs):
-
-        super().__init__(sigma=sigma, x_0=x_0, y_0=y_0, flux=flux, **kwargs)
+                 sigma=sigma.default, bbox_factor=5.5, **kwargs):
+        super().__init__(sigma=sigma, x_0=x_0, y_0=y_0, flux=flux,
+                         bbox_factor=bbox_factor, **kwargs)
 
 
 class MoffatPSF(Fittable2DModel):
@@ -1471,6 +1568,9 @@ class MoffatPSF(Fittable2DModel):
         is set to 1, then the Moffat profile is a Lorentz function,
         whose integral is infinite. For this normalized model, if
         ``beta`` is set to 1, then the profile will be zero everywhere.
+
+    bbox_factor : float, optional
+        The multiple of the FWHM used to define the bounding box limits.
 
     **kwargs : dict, optional
         Additional optional keyword arguments to be passed to the
@@ -1551,10 +1651,11 @@ class MoffatPSF(Fittable2DModel):
         fixed=True)
 
     def __init__(self, *, flux=flux.default, x_0=x_0.default, y_0=y_0.default,
-                 alpha=alpha.default, beta=beta.default, **kwargs):
-
+                 alpha=alpha.default, beta=beta.default, bbox_factor=10.0,
+                 **kwargs):
         super().__init__(flux=flux, x_0=x_0, y_0=y_0, alpha=alpha, beta=beta,
                          **kwargs)
+        self.bbox_factor = bbox_factor
 
     @property
     def fwhm(self):
@@ -1563,9 +1664,9 @@ class MoffatPSF(Fittable2DModel):
         """
         return 2.0 * self.alpha * np.sqrt(2 ** (1.0 / self.beta) - 1)
 
-    def bounding_box(self, factor=10.0):
+    def _calc_bounding_box(self, factor=10.0):
         """
-        Return a bounding box defining the limits of the model.
+        Calculate a bounding box defining the limits of the model.
 
         Parameters
         ----------
@@ -1574,8 +1675,18 @@ class MoffatPSF(Fittable2DModel):
 
         Returns
         -------
-        bounding_box : `astropy.modeling.bounding_box.ModelBoundingBox`
-            A bounding box defining the limits of the model.
+        bbox : tuple
+            A bounding box defining the ((y_min, y_max), (x_min, x_max))
+            limits of the model.
+        """
+        delta = factor * self.fwhm
+        return ((self.y_0 - delta, self.y_0 + delta),
+                (self.x_0 - delta, self.x_0 + delta))
+
+    @property
+    def bounding_box(self):
+        """
+        The bounding box of the model.
 
         Examples
         --------
@@ -1584,16 +1695,24 @@ class MoffatPSF(Fittable2DModel):
         >>> model.bounding_box  # doctest: +FLOAT_CMP
         ModelBoundingBox(
             intervals={
-                x: Interval(lower=-20.3929811, upper=20.3929811)
-                y: Interval(lower=-20.3929811, upper=20.3929811)
+                x: Interval(lower=-20.39298114135835, upper=20.39298114135835)
+                y: Interval(lower=-20.39298114135835, upper=20.39298114135835)
+            }
+            model=MoffatPSF(inputs=('x', 'y'))
+            order='C'
+        )
+        >>> model.bbox_factor = 7
+        >>> model.bounding_box  # doctest: +FLOAT_CMP
+        ModelBoundingBox(
+            intervals={
+                x: Interval(lower=-14.27508679895084, upper=14.27508679895084)
+                y: Interval(lower=-14.27508679895084, upper=14.27508679895084)
             }
             model=MoffatPSF(inputs=('x', 'y'))
             order='C'
         )
         """
-        delta = factor * self.fwhm
-        return ((self.y_0 - delta, self.y_0 + delta),
-                (self.x_0 - delta, self.x_0 + delta))
+        return self._calc_bounding_box(factor=self.bbox_factor)
 
     def evaluate(self, x, y, flux, x_0, y_0, alpha, beta):
         """
@@ -1679,6 +1798,9 @@ class AiryDiskPSF(Fittable2DModel):
 
     radius : float, optional
         The radius of the Airy disk at the first zero.
+
+    bbox_factor : float, optional
+        The multiple of the FWHM used to define the bounding box limits.
 
     **kwargs : dict, optional
         Additional optional keyword arguments to be passed to the
@@ -1772,9 +1894,9 @@ class AiryDiskPSF(Fittable2DModel):
     _rz = jn_zeros(1, 1)[0] / np.pi
 
     def __init__(self, *, flux=flux.default, x_0=x_0.default, y_0=y_0.default,
-                 radius=radius.default, **kwargs):
-
+                 radius=radius.default, bbox_factor=10.0, **kwargs):
         super().__init__(flux=flux, x_0=x_0, y_0=y_0, radius=radius, **kwargs)
+        self.bbox_factor = bbox_factor
 
     @property
     def fwhm(self):
@@ -1783,9 +1905,9 @@ class AiryDiskPSF(Fittable2DModel):
         """
         return 2.0 * 1.616339948310703 * self.radius / self._rz / np.pi
 
-    def bounding_box(self, factor=10.0):
+    def _calc_bounding_box(self, factor=10.0):
         """
-        Return a bounding box defining the limits of the model.
+        Calculate a bounding box defining the limits of the model.
 
         Parameters
         ----------
@@ -1794,8 +1916,18 @@ class AiryDiskPSF(Fittable2DModel):
 
         Returns
         -------
-        bounding_box : `astropy.modeling.bounding_box.ModelBoundingBox`
-            A bounding box defining the limits of the model.
+        bbox : tuple
+            A bounding box defining the ((y_min, y_max), (x_min, x_max))
+            limits of the model.
+        """
+        delta = factor * self.fwhm
+        return ((self.y_0 - delta, self.y_0 + delta),
+                (self.x_0 - delta, self.x_0 + delta))
+
+    @property
+    def bounding_box(self):
+        """
+        The bounding box of the model.
 
         Examples
         --------
@@ -1804,16 +1936,24 @@ class AiryDiskPSF(Fittable2DModel):
         >>> model.bounding_box  # doctest: +FLOAT_CMP
         ModelBoundingBox(
             intervals={
-                x: Interval(lower=-25.30997880, upper=25.30997880)
-                y: Interval(lower=-25.30997880, upper=25.30997880)
+                x: Interval(lower=-25.30997880648709, upper=25.30997880648709)
+                y: Interval(lower=-25.30997880648709, upper=25.30997880648709)
+            }
+            model=AiryDiskPSF(inputs=('x', 'y'))
+            order='C'
+        )
+        >>> model.bbox_factor = 7
+        >>> model.bounding_box  # doctest: +FLOAT_CMP
+        ModelBoundingBox(
+            intervals={
+                x: Interval(lower=-17.71698516454096, upper=17.71698516454096)
+                y: Interval(lower=-17.71698516454096, upper=17.71698516454096)
             }
             model=AiryDiskPSF(inputs=('x', 'y'))
             order='C'
         )
         """
-        delta = factor * self.fwhm
-        return ((self.y_0 - delta, self.y_0 + delta),
-                (self.x_0 - delta, self.x_0 + delta))
+        return self._calc_bounding_box(factor=self.bbox_factor)
 
     def evaluate(self, x, y, flux, x_0, y_0, radius):
         """
