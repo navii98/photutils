@@ -15,6 +15,12 @@ from scipy.interpolate import RectBivariateSpline
 from photutils.aperture import CircularAperture
 from photutils.utils._parameters import as_pair
 
+try:
+    from numba import njit
+except ImportError as e:
+    def njit(func):
+        return func
+
 __all__ = ['ImagePSF', 'FittableImageModel', 'EPSFModel']
 
 
@@ -339,7 +345,7 @@ class ImagePSF(Fittable2DModel):
 
         return evaluated_model
 
-class PSFExPSF(Fittable2DModel):
+class PSFExVariablePSF(Fittable2DModel):
     """
     A fittable model for PSF output from PSFEx.
 
@@ -355,7 +361,7 @@ class PSFExPSF(Fittable2DModel):
 
     Parameters
     ----------
-    data : 3D `~numpy.ndarray`
+    nddata : 3D `~numpy.ndarray`
         Array containing the grid of reference PSF arrays. The length of 
         the x and y axes must both be at least 4. All elements of the 
         input image data must be finite. By default, the PSF peak is 
@@ -416,15 +422,23 @@ class PSFExPSF(Fittable2DModel):
                     description=('Position of a feature in the image along '
                                  'the y axis'))
 
-    def __init__(self, nddata, *, flux=flux.default, x_0=x_0.default,
+    def __init__(self, nddata, meta, *, flux=flux.default, x_0=x_0.default,
                  y_0=y_0.default, origin=None, oversampling=1,
                 fill_value=0.0, **kwargs):
 
         # self.data, self.grid_xypos = self._define_grid(nddata)
         # self._meta = nddata.meta.copy()  # _meta to avoid the meta descriptor
-        self.oversampling = as_pair('oversampling', oversampling,
-                                    lower_bound=(0, 1))
+
         self.data = nddata
+        self.psf_shape = self.data[0].shape
+        self._meta = meta
+        self.vardeg = meta['POLDEG1']
+        self.xzero = meta['POLZERO1']
+        self.yzero = meta['POLZERO2']
+        self.xscale = meta['POLSCAL1']
+        self.yscale = meta['POLSCAL2']
+        self.oversampling = as_pair('oversampling', meta['PSF_SAMP'],
+                                    lower_bound=(0, 1))
         self.fill_value = fill_value
         # self._interpolator = {}
 
@@ -433,6 +447,11 @@ class PSFExPSF(Fittable2DModel):
     def _validate_data(data):
         """
         Validate the PSFEx model.
+
+        1. Oversampling should be interger
+        2. first independent variable should be X_IMAGE
+        3. Second independent variable should be Y_IMAGE
+        4. Both variables should be in Group 1.
         """
         pass
 
@@ -552,7 +571,7 @@ class PSFExPSF(Fittable2DModel):
             A bounding box defining the ((y_min, y_max), (x_min, x_max))
             limits of the model.
         """
-        dy, dx = np.array(self.data.shape[1:]) / 2 / self.oversampling
+        dy, dx = np.array(self.psf_shape) / 2 / self.oversampling
         return ((self.y_0 - dy, self.y_0 + dy), (self.x_0 - dx, self.x_0 + dx))
 
     @property
@@ -592,49 +611,31 @@ class PSFExPSF(Fittable2DModel):
         """
         return self._calc_bounding_box()
 
+    @njit
+    def _calc_poly_coeffs(x, y, vardeg):
+        coeffs = []
+        for i in range(vardeg+1):
+            for j in range(vardeg-i+1):
+                print(f'x^{j}y^{i}')
+                coeffs.append(x**j * y**i)
+        return coeffs
 
-    def _calc_interpolator(self, grid_idx):
+
+    def _calc_image_weights(self, x, y):
+        xi = (x - self.xzero) / self.xscale
+        yi = (y - self.yzero) / self.yscale
+        return self._calc_poly_coeffs(xi, yi, self.vardeg)
+
+    def _calc_model_values(self):
         """
-        Calculate the `~scipy.interpolate.RectBivariateSpline`
-        interpolator for an input ePSF image at the given reference (x,
-        y) position.
-
-        The resulting interpolator is cached in the `_interpolator`
-        dictionary for reuse.
+        Docs to be updated
         """
-        xypos = tuple(self.grid_xypos[grid_idx])
-        if xypos in self._interpolator:
-            return self._interpolator[xypos]
-
-        # RectBivariateSpline expects the data to be in (x, y) axis order
-        data = self.data[grid_idx]
-        interp = RectBivariateSpline(*self._interp_xyidx, data.T, kx=3, ky=3,
-                                     s=0)
-        self._interpolator[xypos] = interp
-        return interp
 
 
-    def _calc_model_values(self, x_0, y_0, xi, yi):
-        """
-        Calculate the ePSF model at a given (x_0, y_0) model coordinate
-        and the input (xi, yi) coordinate.
+        psf = sum(a*b for a, b in zip(coeffs, psf_model))
+        psf_models.append(psf)
 
-        Parameters
-        ----------
-        x_0, y_0 : float
-            The (x, y) position of the model.
 
-        xi, yi : float
-            The input (x, y) coordinates at which the model is
-            evaluated.
-
-        Returns
-        -------
-        result : float or `~numpy.ndarray`
-            The interpolated ePSF model at the input (x_0, y_0)
-            coordinate.
-        """
-        grid_idx, grid_xy = self._find_bounding_points(x_0, y_0)
         interpolators = np.array([self._calc_interpolator(gidx)
                                   for gidx in grid_idx])
         weights = self._calc_bilinear_weights(x_0, y_0, grid_xy)
