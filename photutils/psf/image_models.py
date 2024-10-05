@@ -353,7 +353,7 @@ class PSFExVariablePSF(Fittable2DModel):
     The PSFEx PSF is a grid of 2D models where each 2D element represents
     the contribution of a polynomial. The polymial can be constructed from
     any FITS header parameter, but the most straightforward example would
-    be the x and y positions of the CCD image. Currently, only variation in x 
+    be the x and y positions of the CCD image. Currently, only variation in x
     and y is supported.
 
     The model has three model parameters: an image intensity scaling
@@ -364,10 +364,10 @@ class PSFExVariablePSF(Fittable2DModel):
     Parameters
     ----------
     nddata : 3D `~numpy.ndarray`
-        Array containing the grid of reference PSF arrays. The length of 
-        the x and y axes must both be at least 4. All elements of the 
-        input image data must be finite. By default, the PSF peak is 
-        assumed to be located at the center of the input image (see the 
+        Array containing the grid of reference PSF arrays. The length of
+        the x and y axes must both be at least 4. All elements of the
+        input image data must be finite. By default, the PSF peak is
+        assumed to be located at the center of the input image (see the
         ``origin`` keyword).
 
     meta : `~astropy.io.fits.header.Header`
@@ -404,7 +404,7 @@ class PSFExVariablePSF(Fittable2DModel):
         ``oversampling`` is a scalar then it will be used for both axes.
         If ``oversampling`` has two elements, they must be in ``(y, x)``
         order.
-        PSFEx supports oversampling as a float, but photutils supports 
+        PSFEx supports oversampling as a float, but photutils supports
         it as an interger as of now.
 
     fill_value : float, optional
@@ -418,7 +418,7 @@ class PSFExVariablePSF(Fittable2DModel):
     See Also
     --------
     ImagePSF : A model for a 2D image PSF.
-    GriddedPSFModel : A model for a grid of ePSF models.    
+    GriddedPSFModel : A model for a grid of ePSF models.
 
     """
     flux = Parameter(default=1,
@@ -432,7 +432,7 @@ class PSFExVariablePSF(Fittable2DModel):
 
     def __init__(self, nddata, meta, *, flux=flux.default, x_0=x_0.default,
                  y_0=y_0.default, origin=None, oversampling=1,
-                fill_value=0.0, **kwargs):
+                 fill_value=0.0, **kwargs):
 
         self.data = nddata
         self.psf_shape = self.data.shape[1:]
@@ -496,7 +496,7 @@ class PSFExVariablePSF(Fittable2DModel):
             else:
                 newcls.__dict__[key] = val
 
-        return newcls 
+        return newcls
 
     def deepcopy(self):
         """
@@ -508,7 +508,7 @@ class PSFExVariablePSF(Fittable2DModel):
             A deep copy of this model.
         """
         return copy.deepcopy(self)
-    
+
     @property
     def origin(self):
         """
