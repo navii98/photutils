@@ -516,10 +516,189 @@ class PSFExPSF(Fittable2DModel):
                 raise ValueError('All elements of origin must be finite')
         self._origin = origin
 
-    
+    @property
+    def oversampling(self):
+        """
+        The integer oversampling factor(s) of the input ePSF images.
+
+        If ``oversampling`` is a scalar then it will be used for both
+        axes. If ``oversampling`` has two elements, they must be in
+        ``(y, x)`` order.
+        """
+        return self._oversampling
+
+    @oversampling.setter
+    def oversampling(self, value):
+        """
+        Set the oversampling factor(s) of the input ePSF images.
+
+        Parameters
+        ----------
+        value : int or tuple of int
+            The integer oversampling factor(s) of the input ePSF images.
+            If ``oversampling`` is a scalar then it will be used for both
+            axes. If ``oversampling`` has two elements, they must be in
+            ``(y, x)`` order.
+        """
+        self._oversampling = as_pair('oversampling', value, lower_bound=(0, 1))
+
+    def _calc_bounding_box(self):
+        """
+        Set a bounding box defining the limits of the model.
+
+        Returns
+        -------
+        bbox : tuple
+            A bounding box defining the ((y_min, y_max), (x_min, x_max))
+            limits of the model.
+        """
+        dy, dx = np.array(self.data.shape[1:]) / 2 / self.oversampling
+        return ((self.y_0 - dy, self.y_0 + dy), (self.x_0 - dx, self.x_0 + dx))
+
+    @property
+    def bounding_box(self):
+        """
+        The bounding box of the model.
+
+        Examples
+        --------
+        >>> from itertools import product
+        >>> import numpy as np
+        >>> from astropy.nddata import NDData
+        >>> from photutils.psf import GaussianPSF, GriddedPSFModel
+        >>> psfs = []
+        >>> yy, xx = np.mgrid[0:101, 0:101]
+        >>> for i in range(16):
+        ...     theta = np.deg2rad(i * 10.0)
+        ...     gmodel = GaussianPSF(flux=1, x_0=50, y_0=50, x_fwhm=10,
+        ...                          y_fwhm=5, theta=theta)
+        ...     psfs.append(gmodel(xx, yy))
+        >>> xgrid = [0, 40, 160, 200]
+        >>> ygrid = [0, 60, 140, 200]
+        >>> meta = {}
+        >>> meta['grid_xypos'] = list(product(xgrid, ygrid))
+        >>> meta['oversampling'] = 4
+        >>> nddata = NDData(psfs, meta=meta)
+        >>> model = GriddedPSFModel(nddata, flux=1, x_0=0, y_0=0)
+        >>> model.bounding_box  # doctest: +FLOAT_CMP
+        ModelBoundingBox(
+            intervals={
+                x: Interval(lower=-12.625, upper=12.625)
+                y: Interval(lower=-12.625, upper=12.625)
+            }
+            model=GriddedPSFModel(inputs=('x', 'y'))
+            order='C'
+        )
+        """
+        return self._calc_bounding_box()
 
 
+    def _calc_interpolator(self, grid_idx):
+        """
+        Calculate the `~scipy.interpolate.RectBivariateSpline`
+        interpolator for an input ePSF image at the given reference (x,
+        y) position.
 
+        The resulting interpolator is cached in the `_interpolator`
+        dictionary for reuse.
+        """
+        xypos = tuple(self.grid_xypos[grid_idx])
+        if xypos in self._interpolator:
+            return self._interpolator[xypos]
+
+        # RectBivariateSpline expects the data to be in (x, y) axis order
+        data = self.data[grid_idx]
+        interp = RectBivariateSpline(*self._interp_xyidx, data.T, kx=3, ky=3,
+                                     s=0)
+        self._interpolator[xypos] = interp
+        return interp
+
+
+    def _calc_model_values(self, x_0, y_0, xi, yi):
+        """
+        Calculate the ePSF model at a given (x_0, y_0) model coordinate
+        and the input (xi, yi) coordinate.
+
+        Parameters
+        ----------
+        x_0, y_0 : float
+            The (x, y) position of the model.
+
+        xi, yi : float
+            The input (x, y) coordinates at which the model is
+            evaluated.
+
+        Returns
+        -------
+        result : float or `~numpy.ndarray`
+            The interpolated ePSF model at the input (x_0, y_0)
+            coordinate.
+        """
+        grid_idx, grid_xy = self._find_bounding_points(x_0, y_0)
+        interpolators = np.array([self._calc_interpolator(gidx)
+                                  for gidx in grid_idx])
+        weights = self._calc_bilinear_weights(x_0, y_0, grid_xy)
+
+        idx = np.where(weights != 0)
+        interpolators = interpolators[idx]
+        weights = weights[idx]
+
+        result = 0
+        for interp, weight in zip(interpolators, weights, strict=True):
+            result += interp(xi, yi, grid=False) * weight
+
+        return result
+
+    def evaluate(self, x, y, flux, x_0, y_0):
+        """
+        Calculate the ePSF model at the input coordinates for the given
+        model parameters.
+
+        Parameters
+        ----------
+        x, y : float or `~numpy.ndarray`
+            The x and y positions at which to evaluate the model.
+
+        flux : float
+            The flux scaling factor for the model.
+
+        x_0, y_0 : float
+            The (x, y) position of the model.
+
+        Returns
+        -------
+        evaluated_model : `~numpy.ndarray`
+            The evaluated model.
+        """
+        if x.ndim > 2:
+            raise ValueError('x and y must be 1D or 2D.')
+
+        # the base Model.__call__() method converts scalar inputs to
+        # size-1 arrays before calling evaluate(), but we need scalar
+        # values for the interpolator
+        if not np.isscalar(x_0):
+            x_0 = x_0[0]
+        if not np.isscalar(y_0):
+            y_0 = y_0[0]
+
+        # now evaluate the ePSF at the (x_0, y_0) subpixel position on
+        # the input (x, y) values
+        xi = self.oversampling[1] * (np.asarray(x, dtype=float) - x_0)
+        yi = self.oversampling[0] * (np.asarray(y, dtype=float) - y_0)
+        xi += self.origin[0]
+        yi += self.origin[1]
+
+        evaluated_model = flux * self._calc_model_values(x_0, y_0, xi, yi)
+
+        if self.fill_value is not None:
+            # set pixels that are outside the input pixel grid to the
+            # fill_value to avoid extrapolation; these bounds match the
+            # RegularGridInterpolator bounds
+            ny, nx = self.data.shape[1:]
+            invalid = (xi < 0) | (xi > nx - 1) | (yi < 0) | (yi > ny - 1)
+            evaluated_model[invalid] = self.fill_value
+
+        return evaluated_model
 
 
 
