@@ -352,7 +352,7 @@ class PSFExVariablePSF(Fittable2DModel):
     The PSFEx PSF is a grid of 2D models where each 2D element represents
     the contribution of a polynomial. The polymial can be constructed from
     any FITS header parameter, but the most straightforward example would
-    be the x and y positions of the CCD image.
+    be the x and y positions of the CCD image. Currently, only variation in x and y is supported.
 
     The model has three model parameters: an image intensity scaling
     factor (``flux``) which is applied to the input image, and two
@@ -367,6 +367,9 @@ class PSFExVariablePSF(Fittable2DModel):
         input image data must be finite. By default, the PSF peak is 
         assumed to be located at the center of the input image (see the ``origin``
         keyword).
+
+    meta : `~astropy.io.fits.header.Header`
+        Header associated with extension PSFEx PSF.
 
     flux : float, optional
         The total flux of the source, assuming the input image
@@ -399,6 +402,8 @@ class PSFExVariablePSF(Fittable2DModel):
         ``oversampling`` is a scalar then it will be used for both axes.
         If ``oversampling`` has two elements, they must be in ``(y, x)``
         order.
+        PSFEx supports oversampling as a float, but photutils supports 
+        it as an interger as of now.
 
     fill_value : float, optional
         The value to use for points outside of the input pixel grid.
@@ -410,6 +415,7 @@ class PSFExVariablePSF(Fittable2DModel):
 
     See Also
     --------
+    ImagePSF : A model for a 2D image PSF.
     GriddedPSFModel : A model for a grid of ePSF models.    
 
     """
@@ -426,11 +432,8 @@ class PSFExVariablePSF(Fittable2DModel):
                  y_0=y_0.default, origin=None, oversampling=1,
                 fill_value=0.0, **kwargs):
 
-        # self.data, self.grid_xypos = self._define_grid(nddata)
-        # self._meta = nddata.meta.copy()  # _meta to avoid the meta descriptor
-
         self.data = nddata
-        self.psf_shape = self.data[0].shape
+        self.psf_shape = self.data.shape[1:]
         self._meta = meta
         self.vardeg = meta['POLDEG1']
         self.xzero = meta['POLZERO1']
@@ -439,6 +442,7 @@ class PSFExVariablePSF(Fittable2DModel):
         self.yscale = meta['POLSCAL2']
         self.oversampling = as_pair('oversampling', meta['PSF_SAMP'],
                                     lower_bound=(0, 1))
+        self.origin = origin
         self.fill_value = fill_value
         # self._interpolator = {}
 
@@ -480,7 +484,7 @@ class PSFExVariablePSF(Fittable2DModel):
 
         Returns
         -------
-        result : `PSFExPSF`
+        result : `PSFExVariablePSF`
             A copy of this model with only the model parameters copied.
         """
         newcls = object.__new__(self.__class__)
@@ -499,7 +503,7 @@ class PSFExVariablePSF(Fittable2DModel):
 
         Returns
         -------
-        result : `PSFExPSF`
+        result : `PSFExVariablePSF`
             A deep copy of this model.
         """
         return copy.deepcopy(self)
@@ -526,7 +530,7 @@ class PSFExVariablePSF(Fittable2DModel):
     @origin.setter
     def origin(self, origin):
         if origin is None:
-            origin = (np.array(self.data.shape[1:]) - 1.0) / 2.0
+            origin = (np.array(self.psf_shape) - 1.0) / 2.0
         else:
             origin = np.asarray(origin)
             if origin.ndim != 1 or len(origin) != 2:
@@ -616,7 +620,6 @@ class PSFExVariablePSF(Fittable2DModel):
         coeffs = []
         for i in range(vardeg+1):
             for j in range(vardeg-i+1):
-                print(f'x^{j}y^{i}')
                 coeffs.append(x**j * y**i)
         return coeffs
 
@@ -694,8 +697,6 @@ class PSFExVariablePSF(Fittable2DModel):
             evaluated_model[invalid] = self.fill_value
 
         return evaluated_model
-
-
 
 
 @deprecated('2.0.0', alternative='`ImagePSF`')
