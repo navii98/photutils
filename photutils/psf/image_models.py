@@ -620,35 +620,41 @@ class PSFExVariablePSF(Fittable2DModel):
                 coeffs.append(x**j * y**i)
         return coeffs
 
-
     def _calc_image_weights(self, x, y):
         xi = (x - self.xzero) / self.xscale
         yi = (y - self.yzero) / self.yscale
         return self._calc_poly_coeffs(xi, yi, self.vardeg)
 
-    def _calc_model_values(self):
+    def _calc_model_values(self, x_0, y_0, xi, yi):
         """
-        Docs to be updated
+        Calculate the ePSF model at a given (x_0, y_0) model coordinate
+        and the input (xi, yi) coordinate.
+
+        Parameters
+        ----------
+        x_0, y_0 : float
+            The (x, y) position of the model.
+
+        xi, yi : float
+            The input (x, y) coordinates at which the model is
+            evaluated.
+
+        Returns
+        -------
+        result : float or `~numpy.ndarray`
+            The interpolated ePSF model at the input (x_0, y_0)
+            coordinate.
         """
 
+        weights = self._calc_image_weights(x_0, y_0)
+        psf = sum(a*b for a, b in zip(weights, self.data))
 
-        psf = sum(a*b for a, b in zip(coeffs, psf_model))
-        psf_models.append(psf)
+        x = np.arange(self.psf_shape[1])
+        y = np.arange(self.psf_shape[0])
+        # RectBivariateSpline expects the data to be in (x, y) axis order
+        interpolator = RectBivariateSpline(x, y, psf.T, kx=3, ky=3, s=0)
 
-
-        interpolators = np.array([self._calc_interpolator(gidx)
-                                  for gidx in grid_idx])
-        weights = self._calc_bilinear_weights(x_0, y_0, grid_xy)
-
-        idx = np.where(weights != 0)
-        interpolators = interpolators[idx]
-        weights = weights[idx]
-
-        result = 0
-        for interp, weight in zip(interpolators, weights, strict=True):
-            result += interp(xi, yi, grid=False) * weight
-
-        return result
+        return interpolator(xi, yi, grid=False)
 
     def evaluate(self, x, y, flux, x_0, y_0):
         """
@@ -671,19 +677,7 @@ class PSFExVariablePSF(Fittable2DModel):
         evaluated_model : `~numpy.ndarray`
             The evaluated model.
         """
-        if x.ndim > 2:
-            raise ValueError('x and y must be 1D or 2D.')
 
-        # the base Model.__call__() method converts scalar inputs to
-        # size-1 arrays before calling evaluate(), but we need scalar
-        # values for the interpolator
-        if not np.isscalar(x_0):
-            x_0 = x_0[0]
-        if not np.isscalar(y_0):
-            y_0 = y_0[0]
-
-        # now evaluate the ePSF at the (x_0, y_0) subpixel position on
-        # the input (x, y) values
         xi = self.oversampling[1] * (np.asarray(x, dtype=float) - x_0)
         yi = self.oversampling[0] * (np.asarray(y, dtype=float) - y_0)
         xi += self.origin[0]
@@ -695,7 +689,7 @@ class PSFExVariablePSF(Fittable2DModel):
             # set pixels that are outside the input pixel grid to the
             # fill_value to avoid extrapolation; these bounds match the
             # RegularGridInterpolator bounds
-            ny, nx = self.data.shape[1:]
+            ny, nx = self.psf_shape
             invalid = (xi < 0) | (xi > nx - 1) | (yi < 0) | (yi > ny - 1)
             evaluated_model[invalid] = self.fill_value
 
