@@ -345,6 +345,7 @@ class ImagePSF(Fittable2DModel):
 
         return evaluated_model
 
+
 class PSFExVariablePSF(Fittable2DModel):
     """
     A fittable model for PSF output from PSFEx.
@@ -352,7 +353,8 @@ class PSFExVariablePSF(Fittable2DModel):
     The PSFEx PSF is a grid of 2D models where each 2D element represents
     the contribution of a polynomial. The polymial can be constructed from
     any FITS header parameter, but the most straightforward example would
-    be the x and y positions of the CCD image. Currently, only variation in x and y is supported.
+    be the x and y positions of the CCD image. Currently, only variation in x 
+    and y is supported.
 
     The model has three model parameters: an image intensity scaling
     factor (``flux``) which is applied to the input image, and two
@@ -365,8 +367,8 @@ class PSFExVariablePSF(Fittable2DModel):
         Array containing the grid of reference PSF arrays. The length of 
         the x and y axes must both be at least 4. All elements of the 
         input image data must be finite. By default, the PSF peak is 
-        assumed to be located at the center of the input image (see the ``origin``
-        keyword).
+        assumed to be located at the center of the input image (see the 
+        ``origin`` keyword).
 
     meta : `~astropy.io.fits.header.Header`
         Header associated with extension PSFEx PSF.
@@ -444,10 +446,10 @@ class PSFExVariablePSF(Fittable2DModel):
                                     lower_bound=(0, 1))
         self.origin = origin
         self.fill_value = fill_value
-        # self._interpolator = {}
 
         super().__init__(flux, x_0, y_0)
 
+    @staticmethod
     def _validate_data(data):
         """
         Validate the PSFEx model.
@@ -460,8 +462,7 @@ class PSFExVariablePSF(Fittable2DModel):
         pass
 
     def _cls_info(self):
-        cls_info = [('Oversampling', tuple(self.oversampling))]
-        return cls_info
+        return [('Oversampling', tuple(self.oversampling))]
 
     def __str__(self):
         return self._format_str(keywords=self._cls_info())
