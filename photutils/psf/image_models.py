@@ -616,11 +616,12 @@ class PSFExVariablePSF(Fittable2DModel):
         """
         return self._calc_bounding_box()
 
+    @staticmethod
     @njit
     def _calc_poly_coeffs(x, y, vardeg):
         coeffs = []
-        for i in range(vardeg+1):
-            for j in range(vardeg-i+1):
+        for i in range(vardeg + 1):
+            for j in range(vardeg - i + 1):
                 coeffs.append(x**j * y**i)
         return coeffs
 
@@ -651,7 +652,7 @@ class PSFExVariablePSF(Fittable2DModel):
         """
 
         weights = self._calc_image_weights(x_0, y_0)
-        psf = sum(a*b for a, b in zip(weights, self.data))
+        psf = sum(a * b for a, b in zip(weights, self.data))
 
         x = np.arange(self.psf_shape[1])
         y = np.arange(self.psf_shape[0])
