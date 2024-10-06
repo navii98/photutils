@@ -354,7 +354,8 @@ class PSFExVariablePSF(Fittable2DModel):
     the contribution of a polynomial. The polymial can be constructed from
     any FITS header parameter, but the most straightforward example would
     be the x and y positions of the CCD image. Currently, only variation in x
-    and y is supported.
+    and y is supported. e.g. for a variation degree of 2, the output PSF will
+    be a grid of 6 images corresponding to 1, x, x^2, y, xy, and y^2.
 
     The model has three model parameters: an image intensity scaling
     factor (``flux``) which is applied to the input image, and two
@@ -433,6 +434,7 @@ class PSFExVariablePSF(Fittable2DModel):
                  y_0=y_0.default, origin=None, oversampling=1,
                  fill_value=0.0, **kwargs):
 
+        self._validate_data(data, meta)
         self.data = nddata
         self.psf_shape = self.data.shape[1:]
         self._meta = meta
@@ -441,27 +443,46 @@ class PSFExVariablePSF(Fittable2DModel):
         self.yzero = meta['POLZERO2']
         self.xscale = meta['POLSCAL1']
         self.yscale = meta['POLSCAL2']
-        self.oversampling = as_pair('oversampling', meta['PSF_SAMP'],
+        self.oversampling = as_pair('oversampling', int(meta['PSF_SAMP']),
                                     lower_bound=(0, 1))
         self.origin = origin
         self.fill_value = fill_value
 
-        super().__init__(flux, x_0, y_0)
+        super().__init__(flux, x_0, y_0, **kwargs)
 
     @staticmethod
-    def _validate_data(data):
-        """
-        Validate the PSFEx model.
+    def _validate_data(data, meta):
+        if not isinstance(data, np.ndarray):
+            raise TypeError('Input data must be a 3D numpy array.')
 
-        1. Oversampling should be interger
-        2. first independent variable should be X_IMAGE
-        3. Second independent variable should be Y_IMAGE
-        4. Both variables should be in Group 1.
-        """
-        pass
+        if data.ndim != 3:
+            raise ValueError('Input data must be a 3D numpy array.')
+
+        if not np.all(np.isfinite(data)):
+            raise ValueError('All elements of input data must be finite.')
+
+        # this is required by RectBivariateSpline for kx=3, ky=3
+        if np.any(np.array(data.shape[1:]) < 4):
+            raise ValueError('The length of the x and y axes must both be at '
+                             'least 4.')
+        
+        if not meta['PSF_SAMP'].is_integer():
+            raise TypeError('Oversampling is not supported as a flaot.')
+
+        if (('POLNAXIS' in meta.keys() and meta['POLNAXIS'] > 2) or
+           ('POLNGRP' in meta.keys() and meta['POLNGRP'] > 1) or
+           ('POLNAME1' in meta.keys() and meta['POLNAME1'] != 'X_IMAGE') or
+           ('POLNAME2' in meta.keys() and meta['POLNAME2'] != 'Y_IMAGE')
+        ):
+            raise NotImplementedError('Only one variability group is'
+                                      'supported with upto two variables'
+                                      'that should be "X_IMAGE" and "Y_IMAGE",'
+                                      'in that order.')
 
     def _cls_info(self):
-        return [('Oversampling', tuple(self.oversampling))]
+        return [('Oversampling', tuple(self.oversampling)),
+                ('PSF Shape (oversampled pixels)', self.psf_shape),
+                ('Variation degree', self.vardeg)]
 
     def __str__(self):
         return self._format_str(keywords=self._cls_info())
@@ -623,6 +644,10 @@ class PSFExVariablePSF(Fittable2DModel):
                 for j in range(vardeg - i + 1)]
 
     def _calc_image_weights(self, x, y):
+        """
+        Calculates the weights for each 2D array of PSF grid based on the
+        location of the source in output grid (x, y).
+        """
         xi = (x - self.xzero) / self.xscale
         yi = (y - self.yzero) / self.yscale
         return self._calc_poly_coeffs(xi, yi, self.vardeg)
