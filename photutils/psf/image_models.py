@@ -419,7 +419,6 @@ class PSFExVariablePSF(Fittable2DModel):
     --------
     ImagePSF : A model for a 2D image PSF.
     GriddedPSFModel : A model for a grid of ePSF models.
-
     """
     flux = Parameter(default=1,
                      description='Intensity scaling factor of the image.')
