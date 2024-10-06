@@ -618,11 +618,9 @@ class PSFExVariablePSF(Fittable2DModel):
     @staticmethod
     @njit
     def _calc_poly_coeffs(x, y, vardeg):
-        coeffs = []
-        for i in range(vardeg + 1):
-            for j in range(vardeg - i + 1):
-                coeffs.append(x**j * y**i)
-        return coeffs
+        return [x**j * y**i 
+                for i in range(vardeg+1) 
+                for j in range(vardeg-i+1)]
 
     def _calc_image_weights(self, x, y):
         xi = (x - self.xzero) / self.xscale
